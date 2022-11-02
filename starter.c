@@ -266,7 +266,7 @@ int FindLegalMoves(struct State *state)
     return (jumpptr+numLegalMoves);
 }
 
-double evalBoard(State *currBoard)
+double evalBoard(char[8][8] *currBoard)
 {
     int y,x;
     double score=0.0;
@@ -277,18 +277,20 @@ double evalBoard(State *currBoard)
 
     for(y=0; y<8; y++) for(x=0; x<8; x++) if(x%2 != y%2)
     {
-        if(king(currBoard->board[y][x]))
+        if(king(currBoard[y][x]))
         {
-            if(currBoard->board[y][x] & White) score += 2.0;
+            if(currBoard[y][x] & White) score += 2.0;
             else score -= 2.0;
         }
-        else if(piece(currBoard->board[y][x]))
+        else if(piece(currBoard[y][x]))
         {
-            if(currBoard->board[y][x] & White) score += 1.0;
+            if(currBoard[y][x] & White) score += 1.0;
             else score -= 1.0;
         }
     }
 
+    //if not 0, return -score, else score
+    //Change if it doesn't work
     score = me==1 ? -score : score;
 
 //fprintf(stderr,"score = %lg\n", score);
@@ -297,10 +299,10 @@ double evalBoard(State *currBoard)
     return score;
 }
 
-double minVal(char[8][8] board, int player, double alpha, double beta, int maxDepth){
+double minVal(char currBoard[8][8], int player, double alpha, double beta, int maxDepth){
     struct State state; 
-    if(!MaxDepth){
-
+    if(maxDepth <= 0){
+        return evalBoard(currBoard);
     }
 
     /* Set up the current state */
@@ -312,7 +314,7 @@ double minVal(char[8][8] board, int player, double alpha, double beta, int maxDe
     // currBestMove = rand()%state.numLegalMoves;
 
     // This loop isn't doing anything, but it shows you how to copy the board state and perform a move on it
-    for (x = 0; x < state.numLegalMoves; x++){
+    for (int x = 0; x < state.numLegalMoves; x++){
         double rval;
         char nextBoard[8][8];
 
@@ -327,6 +329,38 @@ double minVal(char[8][8] board, int player, double alpha, double beta, int maxDe
         }
     }
     return beta;
+}
+
+double maxVal(char currBoard[8][8], int player, double alpha, double beta, int maxDepth){
+    struct State state; 
+    if(maxDepth <= 0){
+        return evalBoard(currBoard);
+    }
+
+    /* Set up the current state */
+    state.player = player;
+    memcpy(state.board,currBoard,64*sizeof(char));
+
+    /* Find the legal moves for the current state */
+    FindLegalMoves(&state);
+    // currBestMove = rand()%state.numLegalMoves;
+
+    // This loop isn't doing anything, but it shows you how to copy the board state and perform a move on it
+    for (int x = 0; x < state.numLegalMoves; x++){
+        double rval;
+        char nextBoard[8][8];
+
+        // prep data
+        memcpy(nextBoard,state.board,64*sizeof(char));
+        PerformMove(nextBoard,state.movelist[x],MoveLength(state.movelist[x]));
+
+        // Do your mini-max alpha-beta pruning search here 
+        alpha = MAX(alpha, minVal(nextBoard,(player%2)+1, alpha, beta, MaxDepth-1));
+        if(beta <= alpha){
+            return beta;
+        }
+    }
+    return alpha;
 }
 
 int maxd;
@@ -346,6 +380,9 @@ void *FindBestMoveThread(void *p)
         int i,x,currBestMove; 
         double currBestVal = __DBL_MIN__;
         struct State state; 
+
+        int oldState;
+        pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, %oldState);
 
         /* Set up the current state */
         state.player = player;
@@ -381,8 +418,9 @@ void *FindBestMoveThread(void *p)
         // You *will* want to replace this with a more intelligent move seleciton
         // Might need a semaphore
         
+        pthread_testcancel();
         memset(bestmove, 0, 12*sizeof(char));
-        memcpy(bestmove,state.movelist[currBestMove],MoveLength(state.movelist[i]));
+        memcpy(bestmove,state.movelist[currBestMove],MoveLength(state.movelist[currBestMove]));
     }
     return NULL;
 }
@@ -435,7 +473,7 @@ void TimedFindBestMove(int player)
 void FindBestMove(int player)
 {
     memset(bestmove,0,12*sizeof(char));
-    brokenFindBestMove(player);
+    // brokenFindBestMove(player);
     TimedFindBestMove(player);
 }
 

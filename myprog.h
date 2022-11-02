@@ -61,8 +61,8 @@ int MoveLength(char move[12]);
 int TextToMove(char *mtext, char move[12]);
 void MoveToText(char move[12], char *mtext);
 void PerformMove(char board[8][8], char move[12], int mlen);
-double evalBoard(State *currBoard);
-double minVal(char currBoard[8][8], double alpha, double beta, int depth);
-double maxVal(char currBoard[8][8], double alpha, double beta, int depth);
+double evalBoard(char currBoard[8][8]);
+double minVal(char currBoard[8][8], int player, double alpha, double beta, int depth);
+double maxVal(char currBoard[8][8], int plater, double alpha, double beta, int depth);
 
 #endif

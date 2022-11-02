@@ -8,11 +8,13 @@ LDFLAGS         := -L/usr/X11R6/lib -L /usr/X11R6/LessTif/Motif1.2/lib -lXm -lXa
 #CFLAGS          += -DGRAPHICS
 
 all: checkers computer
-checkers: graphics.o
+# checkers: graphics.o
 computer: myprog.o
 	${CC} ${CPPFLAGS} ${CFLAGS} -o $@ $^
 
-
+starter: starter.of
+	${CC} ${CPPFLAGS} ${CFLAGS} -o $@ $^
+	
 .PHONY: clean
 clean:	
 	@-rm checkers computer *.o
