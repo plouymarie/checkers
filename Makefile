@@ -6,13 +6,14 @@ LDFLAGS         := -L/usr/X11R6/lib -L /usr/X11R6/LessTif/Motif1.2/lib -lXm -lXa
 
 # Uncomment this next line if you'd like to compile the graphical version of the checkers server.
 #CFLAGS          += -DGRAPHICS
+CFLAGS          += -lpthread
 
-all: checkers computer
-# checkers: graphics.o
+all: checkers computer starter
+checkers: graphics.o
 computer: myprog.o
 	${CC} ${CPPFLAGS} ${CFLAGS} -o $@ $^
 
-starter: starter.of
+starter: starter.o
 	${CC} ${CPPFLAGS} ${CFLAGS} -o $@ $^
 	
 .PHONY: clean

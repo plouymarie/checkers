@@ -266,7 +266,7 @@ int FindLegalMoves(struct State *state)
     return (jumpptr+numLegalMoves);
 }
 
-double evalBoard(char[8][8] *currBoard)
+double evalBoard(char currBoard[8][8])
 {
     int y,x;
     double score=0.0;
@@ -323,7 +323,7 @@ double minVal(char currBoard[8][8], int player, double alpha, double beta, int m
         PerformMove(nextBoard,state.movelist[x],MoveLength(state.movelist[x]));
 
         // Do your mini-max alpha-beta pruning search here 
-        beta = MIN(beta, maxVal(nextBoard,(player%2)+1, alpha, beta, MaxDepth-1));
+        beta = MIN(beta, maxVal(nextBoard,(player%2)+1, alpha, beta, maxDepth-1));
         if(beta <= alpha){
             return alpha;
         }
@@ -355,7 +355,7 @@ double maxVal(char currBoard[8][8], int player, double alpha, double beta, int m
         PerformMove(nextBoard,state.movelist[x],MoveLength(state.movelist[x]));
 
         // Do your mini-max alpha-beta pruning search here 
-        alpha = MAX(alpha, minVal(nextBoard,(player%2)+1, alpha, beta, MaxDepth-1));
+        alpha = MAX(alpha, minVal(nextBoard,(player%2)+1, alpha, beta, maxDepth-1));
         if(beta <= alpha){
             return beta;
         }
@@ -371,18 +371,17 @@ int maxd;
 void *FindBestMoveThread(void *p)
 {
     int player = globalPlayer;
-    // int player = (int*)*p;
     
     for(MaxDepth=3;;MaxDepth++)
     {
        // Here's where you need to implement your depth limited mini-max alpha-beta search
-        // usleep(MaxDepth*10000);
+        usleep(MaxDepth*10000);
         int i,x,currBestMove; 
         double currBestVal = __DBL_MIN__;
         struct State state; 
 
         int oldState;
-        pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, %oldState);
+        pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, &oldState);
 
         /* Set up the current state */
         state.player = player;
@@ -404,13 +403,12 @@ void *FindBestMoveThread(void *p)
 
             // Do your mini-max alpha-beta pruning search here 
             rval = minVal(nextBoard, (player%2)+1, currBestVal,  __DBL_MAX__, MaxDepth-1);
+            
+            // check the move returned, if it's better, save it
             if(rval > currBestVal){
                 currBestMove = x;
                 currBestVal = rval;
             }
-
-            // check the move returned, if it's better, save it
-
         }
 
         // For now, until you write your search routine, we will just set the best move
@@ -428,7 +426,7 @@ void *FindBestMoveThread(void *p)
 void *timerThread(void *p)
 {
     int wait = (int)SecPerMove * 1000000 - 300000;
-    int wait = (int)SecPerMove * 100000;
+    // int wait = (int)SecPerMove * 100000;
     usleep(wait);
     return NULL;
 }
@@ -449,7 +447,7 @@ void TimedFindBestMove(int player)
     rval = pthread_create(&timer, NULL, timerThread, NULL);
 
     // create find best move thread (fbmt)
-    rval = pthread_create(&fbmt, NULL, FindBestMoveThread, NULL); 
+    rval = pthread_create(&fbmt, NULL, FindBestMoveThread, (void *) &player); 
 
     // detach fbmt cuz we don't want to join with it, we'll just kill it when we run out of time
     pthread_detach(fbmt); 
@@ -484,7 +482,7 @@ void FindBestMove(int player)
 void brokenFindBestMove(int player)
 {
     int i,x,currBestMove; 
-    double currBestVal;
+    double currBestVal = __DBL_MIN__;
     struct State state; 
 
     /* Set up the current state */
