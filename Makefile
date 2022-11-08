@@ -8,14 +8,14 @@ LDFLAGS         := -L/usr/X11R6/lib -L /usr/X11R6/LessTif/Motif1.2/lib -lXm -lXa
 CFLAGS          += -DGRAPHICS
 CFLAGS          += -lpthread
 
-all: checkers computer starter random d5
+all: checkers computer ourprog random d5 ./other_players
 checkers: graphics.o
 computer: myprog.o
 	${CC} ${CPPFLAGS} ${CFLAGS} -o $@ $^
 
-starter: starter.o
+ourprog: ourprog.o
 	${CC} ${CPPFLAGS} ${CFLAGS} -o $@ $^
 	
 .PHONY: clean
 clean:	
-	@-rm checkers computer *.o
+	@-rm checkers computer ourprog *.o

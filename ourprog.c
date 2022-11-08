@@ -6,20 +6,29 @@
 #include <sys/times.h>
 #include <time.h>
 #include <pthread.h>
+#include <setjmp.h>
 #include "myprog.h"
 
 
+int maxInt = 2147483647;
 float SecPerMove;
 char board[8][8];
 char bestmove[12];
-int me,cutoff,endgame;
+int me,cutoff,endgame = 0;
 long NumNodes;
 int MaxDepth;
-
+int RED = 1;
+int WHITE = 2;
+int threeSecondDepth = 6;
+int oneSecondDepth = 4;
+int tenSecondDepth = 7;
+jmp_buf env;
 int globalPlayer;
+int latestMove1;
+int latestMove2;
 
 /*** For timing ***/
-clock_t start;
+clock_t start_t;
 struct tms bff;
 
 /*** For the jump list ***/
@@ -30,6 +39,15 @@ int jumplist[48][12];
 int numLegalMoves = 0;
 int movelist[48][12];
 
+void PrintTime(void)
+{
+    clock_t current;
+    float total;
+
+    current = clock();
+    total = (float) ((float)current-(float)start_t)/(int)CLOCKS_PER_SEC;
+    fprintf(stderr, "Time = %f\n", total);
+}
 void PrintBoard(State *currBoard)
 {
     int y,x;
@@ -57,7 +75,21 @@ void PrintBoard(State *currBoard)
     }
 }
 
+int LowOnTime(void)
+{
 
+    clock_t current;
+    float total;
+
+    current = clock();
+    total = (float) ((float)current-(float)start_t)/CLOCKS_PER_SEC;
+    if(total >= (SecPerMove- SecPerMove != 1 ? .5 : .25))
+    {
+    	fprintf(stderr, "YES, I AM LOW ON TIME\n");
+    	return 1;
+    }
+    else return 0;
+}
 
 /* Copy a square state */
 void CopyState(char *dest, char src)
@@ -230,9 +262,11 @@ int FindLegalMoves(struct State *state)
     int x,y;
     char move[12], board[8][8];
 
-    memset(move,0,sizeof(move));
+    memset(move,0,12*sizeof(char));
     jumpptr = numLegalMoves = 0;
     memcpy(board,state->board,64*sizeof(char));
+    memset(movelist,0,48*12*sizeof(char));
+    memset(jumplist,0,48*12*sizeof(char));
 
     /* Loop through the board array, determining legal moves/jumps for each piece */
     for(y=0; y<8; y++)
@@ -266,257 +300,6 @@ int FindLegalMoves(struct State *state)
     return (jumpptr+numLegalMoves);
 }
 
-double evalBoard(char currBoard[8][8])
-{
-    int y,x;
-    double score=0.0;
-
-//fprintf(stderr,"**********************\n");
-//fprintf(stderr,"**********************\n");
-//PrintBoard(currBoard);
-
-    for(y=0; y<8; y++) for(x=0; x<8; x++) if(x%2 != y%2)
-    {
-        if(king(currBoard[y][x]))
-        {
-            if(currBoard[y][x] & White) score += 2.0;
-            else score -= 2.0;
-        }
-        else if(piece(currBoard[y][x]))
-        {
-            if(currBoard[y][x] & White) score += 1.0;
-            else score -= 1.0;
-        }
-    }
-
-    //if not 0, return -score, else score
-    //Change if it doesn't work
-    score = me==1 ? -score : score;
-
-//fprintf(stderr,"score = %lg\n", score);
-//fprintf(stderr,"**********************\n");
-//fprintf(stderr,"**********************\n");
-    return score;
-}
-
-double minVal(char currBoard[8][8], int player, double alpha, double beta, int maxDepth){
-    struct State state; 
-    if(maxDepth <= 0){
-        return evalBoard(currBoard);
-    }
-
-    /* Set up the current state */
-    state.player = player;
-    memcpy(state.board,board,64*sizeof(char));
-
-    /* Find the legal moves for the current state */
-    FindLegalMoves(&state);
-    // currBestMove = rand()%state.numLegalMoves;
-
-    // This loop isn't doing anything, but it shows you how to copy the board state and perform a move on it
-    for (int x = 0; x < state.numLegalMoves; x++){
-        double rval;
-        char nextBoard[8][8];
-
-        // prep data
-        memcpy(nextBoard,state.board,64*sizeof(char));
-        PerformMove(nextBoard,state.movelist[x],MoveLength(state.movelist[x]));
-
-        // Do your mini-max alpha-beta pruning search here 
-        beta = MIN(beta, maxVal(nextBoard,(player%2)+1, alpha, beta, maxDepth-1));
-        if(beta <= alpha){
-            return alpha;
-        }
-    }
-    return beta;
-}
-
-double maxVal(char currBoard[8][8], int player, double alpha, double beta, int maxDepth){
-    struct State state; 
-    if(maxDepth <= 0){
-        return evalBoard(currBoard);
-    }
-
-    /* Set up the current state */
-    state.player = player;
-    memcpy(state.board,currBoard,64*sizeof(char));
-
-    /* Find the legal moves for the current state */
-    FindLegalMoves(&state);
-    // currBestMove = rand()%state.numLegalMoves;
-
-    // This loop isn't doing anything, but it shows you how to copy the board state and perform a move on it
-    for (int x = 0; x < state.numLegalMoves; x++){
-        double rval;
-        char nextBoard[8][8];
-
-        // prep data
-        memcpy(nextBoard,state.board,64*sizeof(char));
-        PerformMove(nextBoard,state.movelist[x],MoveLength(state.movelist[x]));
-
-        // Do your mini-max alpha-beta pruning search here 
-        alpha = MAX(alpha, minVal(nextBoard,(player%2)+1, alpha, beta, maxDepth-1));
-        if(beta <= alpha){
-            return beta;
-        }
-    }
-    return alpha;
-}
-
-int maxd;
-/* Employ your favorite search to find the best move.  This code is an example     */
-/* of an alpha/beta search, except I have not provided the MinVal,MaxVal,EVAL      */
-/* functions.  This example code shows you how to call the FindLegalMoves function */
-/* and the PerformMove function */
-void *FindBestMoveThread(void *p)
-{
-    int player = globalPlayer;
-    
-    for(MaxDepth=3;;MaxDepth++)
-    {
-       // Here's where you need to implement your depth limited mini-max alpha-beta search
-        usleep(MaxDepth*10000);
-        int i,x,currBestMove; 
-        double currBestVal = __DBL_MIN__;
-        struct State state; 
-
-        int oldState;
-        pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, &oldState);
-
-        /* Set up the current state */
-        state.player = player;
-        memcpy(state.board,board,64*sizeof(char));
-
-        /* Find the legal moves for the current state */
-        FindLegalMoves(&state);
-        // currBestMove = rand()%state.numLegalMoves;
-
-    // This loop isn't doing anything, but it shows you how to copy the board state and perform a move on it
-        for (x = 0; x < state.numLegalMoves; x++)
-        {
-            double rval=currBestVal;
-            char nextBoard[8][8];
-
-            // prep data
-            memcpy(nextBoard,state.board,64*sizeof(char));
-            PerformMove(nextBoard,state.movelist[x],MoveLength(state.movelist[x]));
-
-            // Do your mini-max alpha-beta pruning search here 
-            rval = minVal(nextBoard, (player%2)+1, currBestVal,  __DBL_MAX__, MaxDepth-1);
-            
-            // check the move returned, if it's better, save it
-            if(rval > currBestVal){
-                currBestMove = x;
-                currBestVal = rval;
-            }
-        }
-
-        // For now, until you write your search routine, we will just set the best move
-        // to be a random (legal) one, so that it plays a legal game of checkers.
-        // You *will* want to replace this with a more intelligent move seleciton
-        // Might need a semaphore
-        
-        pthread_testcancel();
-        memset(bestmove, 0, 12*sizeof(char));
-        memcpy(bestmove,state.movelist[currBestMove],MoveLength(state.movelist[currBestMove]));
-    }
-    return NULL;
-}
-
-void *timerThread(void *p)
-{
-    int wait = (int)SecPerMove * 1000000 - 300000;
-    // int wait = (int)SecPerMove * 100000;
-    usleep(wait);
-    return NULL;
-}
-
-
-//int pthread_create (pthread_t *, const pthread_attr_t *, void *(*)(void *), void *);
-void TimedFindBestMove(int player)
-{
-    char buf[1024];
-    int rval;
-
-    globalPlayer = player;
-
-    pthread_t timer, fbmt;
-
-    fprintf(stderr,"Creating timer thread\n");fflush(stderr);
-    // start kludge timer thread
-    rval = pthread_create(&timer, NULL, timerThread, NULL);
-
-    // create find best move thread (fbmt)
-    rval = pthread_create(&fbmt, NULL, FindBestMoveThread, (void *) &player); 
-
-    // detach fbmt cuz we don't want to join with it, we'll just kill it when we run out of time
-    pthread_detach(fbmt); 
-
-    // wait for timer thread to come back, yawn
-    pthread_join(timer,NULL);
-
-    fprintf(stderr,"Done waiting for timer thread\n");fflush(stderr);
-
-    // smack find best move thread upside the head
-    pthread_cancel(fbmt);
-
-    fprintf(stderr,"Exiting TimedFindBestMove\n");fflush(stderr);
-
-//MoveToText(bestmove,buf);
-//fprintf(stderr,"max depth = %i\n", maxd);fflush(stderr);
-
-}
-
-
-void FindBestMove(int player)
-{
-    memset(bestmove,0,12*sizeof(char));
-    // brokenFindBestMove(player);
-    TimedFindBestMove(player);
-}
-
-
-/* Employ your favorite search to find the best move here.  */
-/* This example code shows you how to call the FindLegalMoves function */
-/* and the PerformMove function */
-void brokenFindBestMove(int player)
-{
-    int i,x,currBestMove; 
-    double currBestVal = __DBL_MIN__;
-    struct State state; 
-
-    /* Set up the current state */
-    state.player = player;
-    memcpy(state.board,board,64*sizeof(char));
-
-    /* Find the legal moves for the current state */
-    FindLegalMoves(&state);
-
-
-// This loop isn't doing anything, but it shows you how to copy the board state and perform a move on it
-    for(x=0;x<state.numLegalMoves;x++)
-    {
-        double rval=currBestVal;
-        char nextBoard[8][8];
-
-        // prep data
-        memcpy(nextBoard,state.board,64*sizeof(char));
-        PerformMove(nextBoard,state.movelist[x],MoveLength(state.movelist[x]));
-        // Do your mini-max alpha-beta pruning search here 
-
-        // check the move returned, if it's better, save it
-
-    }
-
-    // For now, until you write your search routine, we will just set the best move
-    // to be a random (legal) one, so that it plays a legal game of checkers.
-    // You *will* want to replace this with a more intelligent move seleciton
-    //
-    i = rand()%state.numLegalMoves;
-    memcpy(bestmove,state.movelist[i],MoveLength(state.movelist[i]));
-}
-
-
 /* Converts a square label to it's x,y position */
 void NumberToXY(char num, int *x, int *y)
 {
@@ -541,9 +324,7 @@ void NumberToXY(char num, int *x, int *y)
 /* Returns the length of a move */
 int MoveLength(char move[12])
 {
-    int i;
-
-    i = 0;
+    int i = 0;
     while(i<12 && move[i]) i++;
     return i;
 }    
@@ -585,8 +366,7 @@ void MoveToText(char move[12], char *mtext)
     mtext[strlen(mtext)-1] = '\0';
 }
 
-/* Performs a move on the board, updating the state of the board */
-void PerformMove(char board[8][8], char move[12], int mlen)
+void performMove(char board[8][8], char move[12], int mlen, int player)
 {
     int i,j,x,y,x1,y1,x2,y2;
 
@@ -611,16 +391,15 @@ void PerformMove(char board[8][8], char move[12], int mlen)
         }
     }
 }
-
 int main(int argc, char *argv[])
 {
     char buf[1028],move[12];
     int len,mlen,player1;
+    // MaxDepth = 10;
 
     /* Convert command line parameters */
     SecPerMove = (float) atof(argv[1]); /* Time allotted for each move */
     MaxDepth = (argc == 3) ? atoi(argv[2]) : 5;
-    MaxDepth = 10;
 
     /* Determine if I am player 1 (red) or player 2 (white) */
     //fgets(buf, sizeof(buf), stdin);
@@ -641,7 +420,7 @@ int main(int argc, char *argv[])
     srand((unsigned int)time(0));
 
     if (player1) {
-        start = times(&bff);
+        start_t = times(&bff);
         goto determine_next_move;
     }
 
@@ -652,19 +431,19 @@ fprintf(stderr,"Starting game\n");fflush(stderr);
         //fgets(buf, sizeof(buf), stdin);
         len=read(STDIN_FILENO,buf,1028);
         buf[len]='\0';
-        start = times(&bff);
+        start_t = times(&bff);
         memset(move,0,12*sizeof(char));
 
         /* Update the board to reflect opponents move */
         mlen = TextToMove(buf,move);
-        PerformMove(board,move,mlen);
+        performMove(board,move,mlen, me);
         
 determine_next_move:
         /* Find my move, update board, and write move to pipe */
         if(player1) FindBestMove(1); else FindBestMove(2);
         if(bestmove[0] != 0) { /* There is a legal move */
-            mlen = MoveLength(bestmove);
-            PerformMove(board,bestmove,mlen);
+            mlen = MoveLength(bestmove);    
+            performMove(board,bestmove,mlen, me);
             MoveToText(bestmove,buf);
         }
         else exit(1); /* No legal moves available, so I have lost */
@@ -678,4 +457,248 @@ determine_next_move:
     return 0;
 }
 
+// void FindBestMove(int player)
+int maxd;
+/* Employ your favorite search to find the best move.  This code is an example     */
+/* of an alpha/beta search, except I have not provided the MinVal,MaxVal,EVAL      */
+/* functions.  This example code shows you how to call the FindLegalMoves function */
+/* and the PerformMove function */
+void *FindBestMoveThread(void *p)
+{
+    int player = globalPlayer;
+    struct State state; 
+    int oldState;
+    pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, &oldState);
 
+    /* Set up the current state */
+    state.player = player;
+    memcpy(state.board, board, 64 * sizeof(char));
+
+    /* Find the legal moves for the current state */
+    FindLegalMoves(&state);
+
+    memset(bestmove, 0, 12 * sizeof(char));
+    int x,currBestMove = -1, prevBestMove; 
+    double currBestVal = -maxInt;
+	for (x = 0; x < state.numLegalMoves; x++) {
+			double rval = 0;
+			char nextBoard[8][8];
+			memcpy(nextBoard, state.board, 64 * sizeof(char));
+			performMove(nextBoard, state.movelist[x], MoveLength(state.movelist[x]), player);
+            int i = setjmp(env);
+            if(i != 0) goto bailout;
+
+            prevBestMove = rand()%state.numLegalMoves;
+
+			rval = minVal(nextBoard, player, -maxInt, maxInt, MaxDepth);
+            if (currBestVal < rval) {
+				currBestVal = rval;
+                prevBestMove = currBestMove;
+				currBestMove = x;
+			}
+bailout:
+            if(LowOnTime() && numLegalMoves != 0){
+                fprintf(stderr, "Low On Time\n");
+                memcpy(bestmove, state.movelist[rand()%state.numLegalMoves], 12 * sizeof(char));
+            }
+		}
+        // if(latestMove2 == currBestMove && latestMove1 == currBestMove && !jumplist[currBestMove]){
+        //     currBestMove = prevBestMove;
+        //     // currBestMove = rand()%state.numLegalMoves;
+        // }
+        // latestMove2 = latestMove1;
+        // latestMove1 = currBestMove;
+
+        memcpy(bestmove, state.movelist[currBestMove],MoveLength(state.movelist[currBestMove]));
+    // return NULL;
+}
+
+double minVal(char currBoard[8][8], int player, double alpha, double beta, int depth){
+    struct State state; 
+    depth--;
+    /* Set up the current state */
+    state.player = me == RED ? WHITE : RED ;
+    memcpy(state.board, currBoard, 64 * sizeof(char));
+
+    if(depth <= 0){
+        return evalBoard(&state);
+    }
+
+    /* Find the legal moves for the current state */
+    FindLegalMoves(&state);
+
+    // This loop isn't doing anything, but it shows you how to copy the board state and perform a move on it
+    for (int x = 0; x < state.numLegalMoves; x++){
+        char nextBoard[8][8];
+
+        // prep data
+        memcpy(nextBoard,state.board,64*sizeof(char));
+        performMove(nextBoard,state.movelist[x],MoveLength(state.movelist[x]), state.player);
+
+        // Do your mini-max alpha-beta pruning search here 
+        beta = MIN(beta, maxVal(nextBoard,player, alpha, beta, depth));
+        if (LowOnTime())
+		{
+			longjmp(env, 1);
+		}
+        if(beta <= alpha){
+            return alpha;
+        }
+    }
+    
+    return beta;
+}
+
+double maxVal(char currBoard[8][8], int player, double alpha, double beta, int depth){
+    struct State state;
+    depth--;
+    /* Set up the current state */
+    state.player = me;
+    memcpy(state.board,currBoard,64*sizeof(char));
+
+    if(depth <= 0){
+        return evalBoard(&state);
+    }
+
+    /* Find the legal moves for the current state */
+    FindLegalMoves(&state);
+
+    // This loop isn't doing anything, but it shows you how to copy the board state and perform a move on it
+    for (int x = 0; x < state.numLegalMoves; x++){
+
+        char nextBoard[8][8];
+
+        // prep data
+        memcpy(nextBoard,state.board,64*sizeof(char));
+        performMove(nextBoard,state.movelist[x],MoveLength(state.movelist[x]), state.player);
+
+        // Do your mini-max alpha-beta pruning search here 
+        alpha = MAX(alpha, minVal(nextBoard, player, alpha, beta, depth));
+        if (LowOnTime())
+		{
+			longjmp(env, 1);
+		}
+        if(alpha >= beta){
+            return beta;
+        }
+    }
+    return alpha;
+}
+
+void *timerThread(void *p)
+{
+    // int wait = (int)SecPerMove * 1000000 - 300000;
+    int wait = (int)SecPerMove * 100000;
+    usleep(wait);
+    return NULL;
+}
+
+//int pthread_create (pthread_t *, const pthread_attr_t *, void *(*)(void *), void *);
+void TimedFindBestMove(int player)
+{
+    // char buf[1024];
+    // int rval;
+
+    globalPlayer = player;
+
+    pthread_t timer, fbmt;
+
+    fprintf(stderr,"Creating timer thread\n");fflush(stderr);
+    // start_t_t kludge timer thread
+    pthread_create(&timer, NULL, timerThread, NULL);
+
+    // create find best move thread (fbmt)
+    pthread_create(&fbmt, NULL, FindBestMoveThread, NULL); 
+
+    // detach fbmt cuz we don't want to join with it, we'll just kill it when we run out of time
+    pthread_detach(fbmt); 
+
+    // wait for timer thread to come back, yawn
+    pthread_join(timer,NULL);
+    // pthread_join(fbmt,NULL);
+
+    fprintf(stderr,"Done waiting for timer thread\n");fflush(stderr);
+
+    // smack find best move thread upside the head
+    pthread_cancel(fbmt);
+
+    fprintf(stderr,"Exiting TimedFindBestMove\n");fflush(stderr);
+
+//MoveToText(bestmove,buf);
+// fprintf(stderr,"max depth = %i\n", MaxDepth);fflush(stderr);
+}
+
+void FindBestMove(int player)
+{
+    memset(bestmove,0,12*sizeof(char));
+    // brokenFindBestMove(player);
+    TimedFindBestMove(player);
+}
+
+double evalBoard(State * state) {
+    int row, column, p1Score = 0, p2Score = 0, numWhitePieces = 0, numRedPieces = 0;
+	int KING_MATERIAL_ADV = 10;
+	int PAWN_MATERIAL_ADV = 5;
+
+	if (!endgame)
+	for (row = 0; row < 8; row++)
+		for (column = 0; column < 8; column++) {
+			if (row % 2 != column % 2 && !empty(state->board[row][column])) {
+				if (color(state->board[row][column]) == RED) {
+					if (king(state->board[row][column]))
+					{
+						p1Score += KING_MATERIAL_ADV;
+					}
+					else if (piece(state->board[row][column]))
+					{
+						p1Score += PAWN_MATERIAL_ADV;
+					}
+					++numRedPieces;
+				}
+				else
+				{
+					if (king(state->board[row][column]))
+					{
+						p2Score += KING_MATERIAL_ADV;
+					}
+					else if (piece(state->board[row][column]))
+					{
+						p2Score += PAWN_MATERIAL_ADV;
+					}
+					++numWhitePieces;
+				}
+			}
+		}
+	int difference = p1Score - p2Score;
+	return me == RED ? difference : -1*difference;
+
+//      int y,x;
+//     double score=0.0;
+
+// //fprintf(stderr,"**********************\n");
+// //fprintf(stderr,"**********************\n");
+// //PrintBoard(currBoard);
+
+//     for(y=0; y<8; y++) for(x=0; x<8; x++) if(x%2 != y%2)
+//     {
+//         if(king(state->board[y][x]))
+//         {
+//             if(state->board[y][x] & White) score += 2.0;
+//             else score -= 2.0;
+//         }
+//         else if(piece(state->board[y][x]))
+//         {
+//             if(state->board[y][x] & White) score += 1.0;
+//             else score -= 1.0;
+//         }
+//     }
+
+//     //if not 0, return -score, else score
+//     //Change if it doesn't work
+//     score = me==1 ? -score : score;
+
+// //fprintf(stderr,"score = %lg\n", score);
+// //fprintf(stderr,"**********************\n");
+// //fprintf(stderr,"**********************\n");
+//     return score;
+}
