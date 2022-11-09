@@ -7,6 +7,7 @@
 #include <time.h>
 #include <pthread.h>
 #include <setjmp.h>
+#include <limits.h>
 #include "myprog.h"
 
 
@@ -441,6 +442,8 @@ fprintf(stderr,"Starting game\n");fflush(stderr);
 determine_next_move:
         /* Find my move, update board, and write move to pipe */
         if(player1) FindBestMove(1); else FindBestMove(2);
+
+        fprintf(stderr,"Found bestmove: %d\n", bestmove[0]);fflush(stderr);
         if(bestmove[0] != 0) { /* There is a legal move */
             mlen = MoveLength(bestmove);    
             performMove(board,bestmove,mlen, me);
@@ -466,6 +469,8 @@ int maxd;
 void *FindBestMoveThread(void *p)
 {
     int player = globalPlayer;
+    int x,currBestMove = -1;
+    double currBestVal = INT_MIN;
     struct State state; 
     int oldState;
     pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, &oldState);
@@ -478,39 +483,44 @@ void *FindBestMoveThread(void *p)
     FindLegalMoves(&state);
 
     memset(bestmove, 0, 12 * sizeof(char));
-    int x,currBestMove = -1, prevBestMove; 
-    double currBestVal = -maxInt;
-	for (x = 0; x < state.numLegalMoves; x++) {
-			double rval = 0;
-			char nextBoard[8][8];
-			memcpy(nextBoard, state.board, 64 * sizeof(char));
-			performMove(nextBoard, state.movelist[x], MoveLength(state.movelist[x]), player);
-            int i = setjmp(env);
-            if(i != 0) goto bailout;
-
-            prevBestMove = rand()%state.numLegalMoves;
-
-			rval = minVal(nextBoard, player, -maxInt, maxInt, MaxDepth);
-            if (currBestVal < rval) {
-				currBestVal = rval;
-                prevBestMove = currBestMove;
-				currBestMove = x;
-			}
-bailout:
-            if(LowOnTime() && numLegalMoves != 0){
-                fprintf(stderr, "Low On Time\n");
-                memcpy(bestmove, state.movelist[rand()%state.numLegalMoves], 12 * sizeof(char));
-            }
-		}
-        // if(latestMove2 == currBestMove && latestMove1 == currBestMove && !jumplist[currBestMove]){
-        //     currBestMove = prevBestMove;
-        //     // currBestMove = rand()%state.numLegalMoves;
+    for(int maxDepth = 3;;maxDepth++){
+        currBestMove = -1;
+        // if(LowOnTime() != 0){
+        //     fprintf(stderr,"Low On Time 1\n");fflush(stderr);
+        //     break;
         // }
-        // latestMove2 = latestMove1;
-        // latestMove1 = currBestMove;
-
+        int *indexes = (int *) malloc (sizeof(int)*state.numLegalMoves);
+        for(x = 0; x < state.numLegalMoves; x++){
+            indexes[x] = x;
+        }
+        for(x = 0; x < state.numLegalMoves*2; x++){
+            int temp, i, j;
+            i = rand()%state.numLegalMoves;
+            j = rand()%state.numLegalMoves;
+            temp = indexes[i];
+            indexes[i]=indexes[j];
+            indexes[j]=temp;
+        }
+        for (x = 0; x < state.numLegalMoves; x++) {
+            double rval = 0;
+            char nextBoard[8][8];
+            memcpy(nextBoard, state.board, 64 * sizeof(char));
+            performMove(nextBoard, state.movelist[indexes[x]], MoveLength(state.movelist[indexes[x]]), player);
+            rval = minVal(nextBoard, player, INT_MIN, INT_MAX, maxDepth);
+            if (currBestVal < rval) {
+                currBestVal = rval;
+                currBestMove = indexes[x];
+            }
+        }
+            // if(latestMove2 == currBestMove && latestMove1 == currBestMove && !jumplist[currBestMove]){
+            //     currBestMove = prevBestMove;
+            //     // currBestMove = rand()%state.numLegalMoves;
+            // }
+            // latestMove2 = latestMove1;
+            // latestMove1 = currBestMove;
         memcpy(bestmove, state.movelist[currBestMove],MoveLength(state.movelist[currBestMove]));
-    // return NULL;
+    }
+    // memcpy(bestmove, state.movelist[currBestMove],MoveLength(state.movelist[currBestMove]));
 }
 
 double minVal(char currBoard[8][8], int player, double alpha, double beta, int depth){
@@ -537,10 +547,6 @@ double minVal(char currBoard[8][8], int player, double alpha, double beta, int d
 
         // Do your mini-max alpha-beta pruning search here 
         beta = MIN(beta, maxVal(nextBoard,player, alpha, beta, depth));
-        if (LowOnTime())
-		{
-			longjmp(env, 1);
-		}
         if(beta <= alpha){
             return alpha;
         }
@@ -574,10 +580,6 @@ double maxVal(char currBoard[8][8], int player, double alpha, double beta, int d
 
         // Do your mini-max alpha-beta pruning search here 
         alpha = MAX(alpha, minVal(nextBoard, player, alpha, beta, depth));
-        if (LowOnTime())
-		{
-			longjmp(env, 1);
-		}
         if(alpha >= beta){
             return beta;
         }
