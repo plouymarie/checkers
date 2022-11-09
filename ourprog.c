@@ -76,22 +76,6 @@ void PrintBoard(State *currBoard)
     }
 }
 
-int LowOnTime(void)
-{
-
-    clock_t current;
-    float total;
-
-    current = clock();
-    total = (float) ((float)current-(float)start_t)/CLOCKS_PER_SEC;
-    if(total >= (SecPerMove- SecPerMove != 1 ? .5 : .25))
-    {
-    	fprintf(stderr, "YES, I AM LOW ON TIME\n");
-    	return 1;
-    }
-    else return 0;
-}
-
 /* Copy a square state */
 void CopyState(char *dest, char src)
 {
@@ -442,6 +426,7 @@ fprintf(stderr,"Starting game\n");fflush(stderr);
 determine_next_move:
         /* Find my move, update board, and write move to pipe */
         if(player1) FindBestMove(1); else FindBestMove(2);
+	fprintf(stderr, "MaxDepth1== %d\n", MaxDepth);fflush(stderr);
         if(bestmove[0] != 0) { /* There is a legal move */
             mlen = MoveLength(bestmove);    
             performMove(board,bestmove,mlen, me);
@@ -480,30 +465,32 @@ void *FindBestMoveThread(void *p)
     /* Find the legal moves for the current state */
     FindLegalMoves(&state);
     memset(bestmove, 0, 12 * sizeof(char));
+
+    int *indexes = (int *) malloc (sizeof(int)*state.numLegalMoves);
+    for(x = 0; x < state.numLegalMoves; x++){
+        indexes[x] = x;
+    }
+    for(x = 0; x < state.numLegalMoves*2; x++){
+        int temp, i, j;
+        i = rand()%state.numLegalMoves;
+        j = rand()%state.numLegalMoves;
+        temp = indexes[i];
+        indexes[i]=indexes[j];
+        indexes[j]=temp;
+    }
     
     int i = rand()%state.numLegalMoves;
     memcpy(bestmove, state.movelist[i],MoveLength(state.movelist[i]));
 
-    for(int maxDepth = 7;;maxDepth++){
+   for(MaxDepth = 7;;MaxDepth++){
+    // for(int maxDepth = 7;;maxDepth++){
         currBestMove = -1;
-        int *indexes = (int *) malloc (sizeof(int)*state.numLegalMoves);
-        for(x = 0; x < state.numLegalMoves; x++){
-            indexes[x] = x;
-        }
-        for(x = 0; x < state.numLegalMoves*2; x++){
-            int temp, i, j;
-            i = rand()%state.numLegalMoves;
-            j = rand()%state.numLegalMoves;
-            temp = indexes[i];
-            indexes[i]=indexes[j];
-            indexes[j]=temp;
-        }
         for (x = 0; x < state.numLegalMoves; x++) {
             double rval = 0;
             char nextBoard[8][8];
             memcpy(nextBoard, state.board, 64 * sizeof(char));
             performMove(nextBoard, state.movelist[indexes[x]], MoveLength(state.movelist[indexes[x]]), player);
-            rval = minVal(nextBoard, player, INT_MIN, INT_MAX, maxDepth);
+            rval = minVal(nextBoard, player, INT_MIN, INT_MAX, MaxDepth);
             if (currBestVal < rval) {
                 currBestVal = rval;
                 currBestMove = indexes[x];
@@ -579,7 +566,7 @@ double maxVal(char currBoard[8][8], int player, double alpha, double beta, int d
 
 void *timerThread(void *p)
 {
-    int wait = (int)SecPerMove * 1000000 - 300000;
+    int wait = (int)SecPerMove * 1000000 - 100000;
     // int wait = (int)SecPerMove * 100000;
     // fprintf(stderr,"wait: %d\n", wait);fflush(stderr);
     // fprintf(stderr,"SecPerMove: %lg\n", SecPerMove);fflush(stderr);
