@@ -401,7 +401,7 @@ int main(int argc, char *argv[])
     /* Convert command line parameters */
     SecPerMove = (float) atof(argv[1]); /* Time allotted for each move */
     MaxDepth = (argc == 3) ? atoi(argv[2]) : 5;
-
+   
     /* Determine if I am player 1 (red) or player 2 (white) */
     //fgets(buf, sizeof(buf), stdin);
     len=read(STDIN_FILENO,buf,1028);
@@ -442,8 +442,6 @@ fprintf(stderr,"Starting game\n");fflush(stderr);
 determine_next_move:
         /* Find my move, update board, and write move to pipe */
         if(player1) FindBestMove(1); else FindBestMove(2);
-
-        fprintf(stderr,"Found bestmove: %d\n", bestmove[0]);fflush(stderr);
         if(bestmove[0] != 0) { /* There is a legal move */
             mlen = MoveLength(bestmove);    
             performMove(board,bestmove,mlen, me);
@@ -481,14 +479,13 @@ void *FindBestMoveThread(void *p)
 
     /* Find the legal moves for the current state */
     FindLegalMoves(&state);
-
     memset(bestmove, 0, 12 * sizeof(char));
-    for(int maxDepth = 3;;maxDepth++){
+    
+    int i = rand()%state.numLegalMoves;
+    memcpy(bestmove, state.movelist[i],MoveLength(state.movelist[i]));
+
+    for(int maxDepth = 7;;maxDepth++){
         currBestMove = -1;
-        // if(LowOnTime() != 0){
-        //     fprintf(stderr,"Low On Time 1\n");fflush(stderr);
-        //     break;
-        // }
         int *indexes = (int *) malloc (sizeof(int)*state.numLegalMoves);
         for(x = 0; x < state.numLegalMoves; x++){
             indexes[x] = x;
@@ -512,15 +509,8 @@ void *FindBestMoveThread(void *p)
                 currBestMove = indexes[x];
             }
         }
-            // if(latestMove2 == currBestMove && latestMove1 == currBestMove && !jumplist[currBestMove]){
-            //     currBestMove = prevBestMove;
-            //     // currBestMove = rand()%state.numLegalMoves;
-            // }
-            // latestMove2 = latestMove1;
-            // latestMove1 = currBestMove;
         memcpy(bestmove, state.movelist[currBestMove],MoveLength(state.movelist[currBestMove]));
     }
-    // memcpy(bestmove, state.movelist[currBestMove],MoveLength(state.movelist[currBestMove]));
 }
 
 double minVal(char currBoard[8][8], int player, double alpha, double beta, int depth){
@@ -589,8 +579,10 @@ double maxVal(char currBoard[8][8], int player, double alpha, double beta, int d
 
 void *timerThread(void *p)
 {
-    // int wait = (int)SecPerMove * 1000000 - 300000;
-    int wait = (int)SecPerMove * 100000;
+    int wait = (int)SecPerMove * 1000000 - 300000;
+    // int wait = (int)SecPerMove * 100000;
+    // fprintf(stderr,"wait: %d\n", wait);fflush(stderr);
+    // fprintf(stderr,"SecPerMove: %lg\n", SecPerMove);fflush(stderr);
     usleep(wait);
     return NULL;
 }
@@ -638,69 +630,69 @@ void FindBestMove(int player)
 }
 
 double evalBoard(State * state) {
-    int row, column, p1Score = 0, p2Score = 0, numWhitePieces = 0, numRedPieces = 0;
-	int KING_MATERIAL_ADV = 10;
-	int PAWN_MATERIAL_ADV = 5;
+    // int row, column, p1Score = 0, p2Score = 0, numWhitePieces = 0, numRedPieces = 0;
+	// int KING_MATERIAL_ADV = 10;
+	// int PAWN_MATERIAL_ADV = 5;
 
-	if (!endgame)
-	for (row = 0; row < 8; row++)
-		for (column = 0; column < 8; column++) {
-			if (row % 2 != column % 2 && !empty(state->board[row][column])) {
-				if (color(state->board[row][column]) == RED) {
-					if (king(state->board[row][column]))
-					{
-						p1Score += KING_MATERIAL_ADV;
-					}
-					else if (piece(state->board[row][column]))
-					{
-						p1Score += PAWN_MATERIAL_ADV;
-					}
-					++numRedPieces;
-				}
-				else
-				{
-					if (king(state->board[row][column]))
-					{
-						p2Score += KING_MATERIAL_ADV;
-					}
-					else if (piece(state->board[row][column]))
-					{
-						p2Score += PAWN_MATERIAL_ADV;
-					}
-					++numWhitePieces;
-				}
-			}
-		}
-	int difference = p1Score - p2Score;
-	return me == RED ? difference : -1*difference;
+	// if (!endgame)
+	// for (row = 0; row < 8; row++)
+	// 	for (column = 0; column < 8; column++) {
+	// 		if (row % 2 != column % 2 && !empty(state->board[row][column])) {
+	// 			if (color(state->board[row][column]) == RED) {
+	// 				if (king(state->board[row][column]))
+	// 				{
+	// 					p1Score += KING_MATERIAL_ADV;
+	// 				}
+	// 				else if (piece(state->board[row][column]))
+	// 				{
+	// 					p1Score += PAWN_MATERIAL_ADV;
+	// 				}
+	// 				++numRedPieces;
+	// 			}
+	// 			else
+	// 			{
+	// 				if (king(state->board[row][column]))
+	// 				{
+	// 					p2Score += KING_MATERIAL_ADV;
+	// 				}
+	// 				else if (piece(state->board[row][column]))
+	// 				{
+	// 					p2Score += PAWN_MATERIAL_ADV;
+	// 				}
+	// 				++numWhitePieces;
+	// 			}
+	// 		}
+	// 	}
+	// int difference = p1Score - p2Score;
+	// return me == RED ? difference : -1*difference;
 
-//      int y,x;
-//     double score=0.0;
+     int y,x;
+    double score=0.0;
 
-// //fprintf(stderr,"**********************\n");
-// //fprintf(stderr,"**********************\n");
-// //PrintBoard(currBoard);
+//fprintf(stderr,"**********************\n");
+//fprintf(stderr,"**********************\n");
+//PrintBoard(currBoard);
 
-//     for(y=0; y<8; y++) for(x=0; x<8; x++) if(x%2 != y%2)
-//     {
-//         if(king(state->board[y][x]))
-//         {
-//             if(state->board[y][x] & White) score += 2.0;
-//             else score -= 2.0;
-//         }
-//         else if(piece(state->board[y][x]))
-//         {
-//             if(state->board[y][x] & White) score += 1.0;
-//             else score -= 1.0;
-//         }
-//     }
+    for(y=0; y<8; y++) for(x=0; x<8; x++) if(x%2 != y%2)
+    {
+        if(king(state->board[y][x]))
+        {
+            if(state->board[y][x] & White) score += 2.0;
+            else score -= 2.0;
+        }
+        else if(piece(state->board[y][x]))
+        {
+            if(state->board[y][x] & White) score += 1.0;
+            else score -= 1.0;
+        }
+    }
 
-//     //if not 0, return -score, else score
-//     //Change if it doesn't work
-//     score = me==1 ? -score : score;
+    //if not 0, return -score, else score
+    //Change if it doesn't work
+    score = me==1 ? -score : score;
 
-// //fprintf(stderr,"score = %lg\n", score);
-// //fprintf(stderr,"**********************\n");
-// //fprintf(stderr,"**********************\n");
-//     return score;
+//fprintf(stderr,"score = %lg\n", score);
+//fprintf(stderr,"**********************\n");
+//fprintf(stderr,"**********************\n");
+    return score;
 }
