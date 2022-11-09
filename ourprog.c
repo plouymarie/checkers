@@ -6,30 +6,22 @@
 #include <sys/times.h>
 #include <time.h>
 #include <pthread.h>
-#include <setjmp.h>
 #include <limits.h>
 #include "myprog.h"
-
 
 int maxInt = 2147483647;
 float SecPerMove;
 char board[8][8];
 char bestmove[12];
-int me,cutoff,endgame = 0;
+int me, cutoff, endgame = 0;
 long NumNodes;
 int MaxDepth;
 int RED = 1;
 int WHITE = 2;
-int threeSecondDepth = 6;
-int oneSecondDepth = 4;
-int tenSecondDepth = 7;
-jmp_buf env;
 int globalPlayer;
-int latestMove1;
-int latestMove2;
 
 /*** For timing ***/
-clock_t start_t;
+clock_t star;
 struct tms bff;
 
 /*** For the jump list ***/
@@ -46,7 +38,7 @@ void PrintTime(void)
     float total;
 
     current = clock();
-    total = (float) ((float)current-(float)start_t)/(int)CLOCKS_PER_SEC;
+    total = (float) ((float)current-(float)start)/(int)CLOCKS_PER_SEC;
     fprintf(stderr, "Time = %f\n", total);
 }
 void PrintBoard(State *currBoard)
@@ -89,21 +81,21 @@ void CopyState(char *dest, char src)
 /* Reset board to initial configuration */
 void ResetBoard(void)
 {
-        int x,y;
+    int x,y;
     char pos;
 
-        pos = 0;
-        for(y=0; y<8; y++)
-        for(x=0; x<8; x++)
-        {
-                if(x%2 != y%2) {
-                        board[y][x] = pos;
-                        if(y<3 || y>4) board[y][x] |= Piece; else board[y][x] |= Empty;
-                        if(y<3) board[y][x] |= Red; 
-                        if(y>4) board[y][x] |= White;
-                        pos++;
-                } else board[y][x] = 0;
-        }
+    pos = 0;
+    for(y=0; y<8; y++)
+    for(x=0; x<8; x++)
+    {
+        if(x%2 != y%2) {
+            board[y][x] = pos;
+            if(y<3 || y>4) board[y][x] |= Piece; else board[y][x] |= Empty;
+            if(y<3) board[y][x] |= Red; 
+            if(y>4) board[y][x] |= White;
+            pos++;
+        } else board[y][x] = 0;
+    }
     endgame = 0;
 }
 
@@ -250,8 +242,8 @@ int FindLegalMoves(struct State *state)
     memset(move,0,12*sizeof(char));
     jumpptr = numLegalMoves = 0;
     memcpy(board,state->board,64*sizeof(char));
-    memset(movelist,0,48*12*sizeof(char));
-    memset(jumplist,0,48*12*sizeof(char));
+    // memset(movelist,0,48*12*sizeof(char));
+    // memset(jumplist,0,48*12*sizeof(char));
 
     /* Loop through the board array, determining legal moves/jumps for each piece */
     for(y=0; y<8; y++)
@@ -351,7 +343,7 @@ void MoveToText(char move[12], char *mtext)
     mtext[strlen(mtext)-1] = '\0';
 }
 
-void performMove(char board[8][8], char move[12], int mlen, int player)
+void PerformMove(char board[8][8], char move[12], int mlen)
 {
     int i,j,x,y,x1,y1,x2,y2;
 
@@ -385,7 +377,7 @@ int main(int argc, char *argv[])
     /* Convert command line parameters */
     SecPerMove = (float) atof(argv[1]); /* Time allotted for each move */
     MaxDepth = (argc == 3) ? atoi(argv[2]) : 5;
-   
+
     /* Determine if I am player 1 (red) or player 2 (white) */
     //fgets(buf, sizeof(buf), stdin);
     len=read(STDIN_FILENO,buf,1028);
@@ -405,7 +397,7 @@ int main(int argc, char *argv[])
     srand((unsigned int)time(0));
 
     if (player1) {
-        start_t = times(&bff);
+        start = times(&bff);
         goto determine_next_move;
     }
 
@@ -416,12 +408,12 @@ fprintf(stderr,"Starting game\n");fflush(stderr);
         //fgets(buf, sizeof(buf), stdin);
         len=read(STDIN_FILENO,buf,1028);
         buf[len]='\0';
-        start_t = times(&bff);
+        start = times(&bff);
         memset(move,0,12*sizeof(char));
 
         /* Update the board to reflect opponents move */
         mlen = TextToMove(buf,move);
-        performMove(board,move,mlen, me);
+        PerformMove(board,move,mlen);
         
 determine_next_move:
         /* Find my move, update board, and write move to pipe */
@@ -429,7 +421,7 @@ determine_next_move:
 	fprintf(stderr, "MaxDepth1== %d\n", MaxDepth);fflush(stderr);
         if(bestmove[0] != 0) { /* There is a legal move */
             mlen = MoveLength(bestmove);    
-            performMove(board,bestmove,mlen, me);
+            PerformMove(board,bestmove,mlen);
             MoveToText(bestmove,buf);
         }
         else exit(1); /* No legal moves available, so I have lost */
@@ -455,6 +447,9 @@ void *FindBestMoveThread(void *p)
     int x,currBestMove = -1;
     double currBestVal = INT_MIN;
     struct State state; 
+    double rval = 0;
+    char nextBoard[8][8];
+
     int oldState;
     pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, &oldState);
 
@@ -477,19 +472,17 @@ void *FindBestMoveThread(void *p)
         temp = indexes[i];
         indexes[i]=indexes[j];
         indexes[j]=temp;
-    }
-    
+    }    
     int i = rand()%state.numLegalMoves;
     memcpy(bestmove, state.movelist[i],MoveLength(state.movelist[i]));
 
-   for(MaxDepth = 7;;MaxDepth++){
+    for(MaxDepth = 7;;MaxDepth++){
     // for(int maxDepth = 7;;maxDepth++){
         currBestMove = -1;
         for (x = 0; x < state.numLegalMoves; x++) {
-            double rval = 0;
-            char nextBoard[8][8];
+            rval = 0;
             memcpy(nextBoard, state.board, 64 * sizeof(char));
-            performMove(nextBoard, state.movelist[indexes[x]], MoveLength(state.movelist[indexes[x]]), player);
+            PerformMove(nextBoard, state.movelist[indexes[x]], MoveLength(state.movelist[indexes[x]]));
             rval = minVal(nextBoard, player, INT_MIN, INT_MAX, MaxDepth);
             if (currBestVal < rval) {
                 currBestVal = rval;
@@ -520,10 +513,10 @@ double minVal(char currBoard[8][8], int player, double alpha, double beta, int d
 
         // prep data
         memcpy(nextBoard,state.board,64*sizeof(char));
-        performMove(nextBoard,state.movelist[x],MoveLength(state.movelist[x]), state.player);
+        PerformMove(nextBoard,state.movelist[x],MoveLength(state.movelist[x]));
 
         // Do your mini-max alpha-beta pruning search here 
-        beta = MIN(beta, maxVal(nextBoard,player, alpha, beta, depth));
+        beta = MIN(beta, maxVal(nextBoard, player, alpha, beta, depth));
         if(beta <= alpha){
             return alpha;
         }
@@ -553,7 +546,7 @@ double maxVal(char currBoard[8][8], int player, double alpha, double beta, int d
 
         // prep data
         memcpy(nextBoard,state.board,64*sizeof(char));
-        performMove(nextBoard,state.movelist[x],MoveLength(state.movelist[x]), state.player);
+        PerformMove(nextBoard,state.movelist[x],MoveLength(state.movelist[x]));
 
         // Do your mini-max alpha-beta pruning search here 
         alpha = MAX(alpha, minVal(nextBoard, player, alpha, beta, depth));
@@ -577,9 +570,6 @@ void *timerThread(void *p)
 //int pthread_create (pthread_t *, const pthread_attr_t *, void *(*)(void *), void *);
 void TimedFindBestMove(int player)
 {
-    // char buf[1024];
-    // int rval;
-
     globalPlayer = player;
 
     pthread_t timer, fbmt;
@@ -596,7 +586,6 @@ void TimedFindBestMove(int player)
 
     // wait for timer thread to come back, yawn
     pthread_join(timer,NULL);
-    // pthread_join(fbmt,NULL);
 
     fprintf(stderr,"Done waiting for timer thread\n");fflush(stderr);
 
@@ -617,43 +606,7 @@ void FindBestMove(int player)
 }
 
 double evalBoard(State * state) {
-    // int row, column, p1Score = 0, p2Score = 0, numWhitePieces = 0, numRedPieces = 0;
-	// int KING_MATERIAL_ADV = 10;
-	// int PAWN_MATERIAL_ADV = 5;
-
-	// if (!endgame)
-	// for (row = 0; row < 8; row++)
-	// 	for (column = 0; column < 8; column++) {
-	// 		if (row % 2 != column % 2 && !empty(state->board[row][column])) {
-	// 			if (color(state->board[row][column]) == RED) {
-	// 				if (king(state->board[row][column]))
-	// 				{
-	// 					p1Score += KING_MATERIAL_ADV;
-	// 				}
-	// 				else if (piece(state->board[row][column]))
-	// 				{
-	// 					p1Score += PAWN_MATERIAL_ADV;
-	// 				}
-	// 				++numRedPieces;
-	// 			}
-	// 			else
-	// 			{
-	// 				if (king(state->board[row][column]))
-	// 				{
-	// 					p2Score += KING_MATERIAL_ADV;
-	// 				}
-	// 				else if (piece(state->board[row][column]))
-	// 				{
-	// 					p2Score += PAWN_MATERIAL_ADV;
-	// 				}
-	// 				++numWhitePieces;
-	// 			}
-	// 		}
-	// 	}
-	// int difference = p1Score - p2Score;
-	// return me == RED ? difference : -1*difference;
-
-     int y,x;
+    int y,x;
     double score=0.0;
 
 //fprintf(stderr,"**********************\n");
@@ -673,9 +626,6 @@ double evalBoard(State * state) {
             else score -= 1.0;
         }
     }
-
-    //if not 0, return -score, else score
-    //Change if it doesn't work
     score = me==1 ? -score : score;
 
 //fprintf(stderr,"score = %lg\n", score);
